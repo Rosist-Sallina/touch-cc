@@ -382,6 +382,11 @@ git add hook/hook.sh hook/test_hook.sh && git commit -m "feat(hook): 正式 sock
 
 # M2 — tbcd 守护进程逻辑（无 UI）
 
+> **⚠️ M0 后修订（2026-06-03）：xcode-select 根因已解决**
+> Spike 初期 `swift build` 失败，根因是 `xcode-select` 指向 CommandLineTools 而非已安装的 `/Applications/Xcode.app`。
+> 执行 `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` 后 SwiftPM (Swift 6.3.2) 正常。
+> **M2-M4 按原计划用 SwiftPM + XCTest。** 唯一简化：私有符号沿用 Spike 验证可行的 `@_silgen_name` 直接声明，**省去 CDFR systemLibrary module**（Task 4 Step 2 跳过；Task 7 据此简化，DFRFoundation 仅在 linkerSettings 声明）。
+
 ### Task 4: SPM 包骨架 + 协议层（TDD）
 
 **Files:**
