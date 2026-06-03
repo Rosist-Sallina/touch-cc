@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var menu: MenuBarController?
 
     func applicationDidFinishLaunching(_ n: Notification) {
+        AppConfig.current = AppConfig.load()
         let capable = TouchBarController.isCapable
         menu = MenuBarController(capable: capable)
 

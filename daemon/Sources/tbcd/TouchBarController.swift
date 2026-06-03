@@ -18,6 +18,7 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
     private var approvalView: ApprovalView?
     private var pendingReq: ApprovalRequest?
     private var timeoutWork: DispatchWorkItem?
+    private var selfDismissing = false   // dismiss() 期间为 true，用于区分"自发关闭"与"用户点叉叉"
     var onSwipe: ((Decision) -> Void)?
 
     /// 展示一条审批请求；首次调用接管 Touch Bar，后续仅刷新内容。
@@ -39,17 +40,20 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
         timeoutWork?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.onSwipe?(.deny) }
         timeoutWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Double(req.timeout + 5), execute: work)
+        let extra = Double(AppConfig.current.uiTimeoutExtra)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Double(req.timeout) + extra, execute: work)
     }
 
     /// 释放 Touch Bar，回到系统默认。
     func dismiss() {
+        selfDismissing = true
         timeoutWork?.cancel()
         timeoutWork = nil
         if let tb = touchBar { Self.dismissSystemModal(tb) }
         touchBar = nil
         approvalView = nil
         pendingReq = nil
+        selfDismissing = false
     }
 
     func touchBar(_ tb: NSTouchBar, makeItemForIdentifier id: NSTouchBarItem.Identifier) -> NSTouchBarItem? {
@@ -57,6 +61,18 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
         let item = NSCustomTouchBarItem(identifier: id)
         let v = ApprovalView()
         v.onDecision = { [weak self] d in self?.onSwipe?(d) }
+        v.onWindowLost = { [weak self] in
+            guard let self, !self.selfDismissing, self.touchBar != nil else { return }
+            // 用户点了系统叉叉：modal 已被系统关闭，把当前 Touch Bar 状态清空，
+            // 当作一次拒绝交给队列推进（下一条请求会重新接管 Touch Bar）。
+            self.touchBar = nil
+            self.approvalView = nil
+            self.pendingReq = nil
+            self.timeoutWork?.cancel()
+            self.timeoutWork = nil
+            NSLog("close-box: 用户点叉叉 → 当前请求按拒绝处理")
+            self.onSwipe?(.deny)
+        }
         if let r = pendingReq { v.update(r) }
         approvalView = v
         item.view = v

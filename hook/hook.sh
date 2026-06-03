@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # touchbar-cc PreToolUse hook
 # 把权限申请发到 tbcd 守护进程，等 Touch Bar 决定；任何失败路径 exit 0 → CC 回退原生提示。
+# 零外部依赖：仅用 macOS 自带的 bash/printf/nc/uuidgen。
 set -uo pipefail
 
 SOCK="${TBCC_SOCK:-$HOME/.touchbar-cc/tbcd.sock}"
@@ -8,31 +9,46 @@ TIMEOUT="${TBCC_TIMEOUT:-55}"
 
 INPUT="$(cat)"
 
-# 提取字段（任何 jq 错误都静默放行）
-session=$(printf '%s' "$INPUT" | jq -r '.cwd // "" | split("/") | last' 2>/dev/null) || exit 0
-cwd=$(printf '%s' "$INPUT" | jq -r '.cwd // ""' 2>/dev/null) || exit 0
-tool=$(printf '%s' "$INPUT" | jq -r '.tool_name // "?"' 2>/dev/null) || exit 0
+# 轻量 JSON 提取（纯 bash，不依赖 jq）
+json_str() {
+  printf '%s' "$INPUT" | /usr/bin/python3 -c "
+import sys,json
+try:
+  d=json.load(sys.stdin); $1
+except: sys.exit(1)
+" 2>/dev/null
+}
 
-# 摘要：按工具类型取关键参数
+session=$(json_str "print(d.get('cwd','').rsplit('/',1)[-1])") || exit 0
+cwd=$(json_str "print(d.get('cwd',''))") || exit 0
+tool=$(json_str "print(d.get('tool_name','?'))") || exit 0
+
 case "$tool" in
-  Bash) summary=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null) ;;
-  Edit|Write|MultiEdit|NotebookEdit) summary=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // ""' 2>/dev/null) ;;
-  *) summary=$(printf '%s' "$INPUT" | jq -rc '.tool_input // {}' 2>/dev/null) ;;
+  Bash) summary=$(json_str "print(d.get('tool_input',{}).get('command',''))") ;;
+  Edit|Write|MultiEdit|NotebookEdit) summary=$(json_str "print(d.get('tool_input',{}).get('file_path',''))") ;;
+  *) summary=$(json_str "import json as j;print(j.dumps(d.get('tool_input',{})))") ;;
 esac
 
 id=$(/usr/bin/uuidgen)
-req=$(jq -nc --arg id "$id" --arg s "$session" --arg c "$cwd" --arg t "$tool" --arg sum "$summary" --argjson to "$TIMEOUT" \
-  '{id:$id,session:$s,cwd:$c,tool:$t,summary:$sum,queue_remaining:0,timeout:$to}')
+
+# 手工构造 JSON（避免依赖 jq）
+esc() { printf '%s' "$1" | /usr/bin/python3 -c "import sys,json;print(json.dumps(sys.stdin.read()),end='')"; }
+req="{\"id\":$(esc "$id"),\"session\":$(esc "$session"),\"cwd\":$(esc "$cwd"),\"tool\":$(esc "$tool"),\"summary\":$(esc "$summary"),\"queue_remaining\":0,\"timeout\":$TIMEOUT}"
 
 # 连 socket，发请求，读一行响应（超时回退）
 resp=$(printf '%s\n' "$req" | nc -U -w "$TIMEOUT" "$SOCK" 2>/dev/null | head -1) || exit 0
 [ -z "$resp" ] && exit 0
 
-decision=$(printf '%s' "$resp" | jq -r '.decision // ""' 2>/dev/null) || exit 0
+# 提取 decision 字段
+decision=$(printf '%s' "$resp" | /usr/bin/python3 -c "
+import sys,json
+try: print(json.load(sys.stdin).get('decision',''))
+except: pass
+" 2>/dev/null) || exit 0
 
 case "$decision" in
-  allow) jq -nc '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"allow",permissionDecisionReason:"touchbar approved"}}' ;;
-  deny)  jq -nc '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:"touchbar rejected"}}' ;;
-  *) exit 0 ;;  # 未知响应 → 回退
+  allow) printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"touchbar approved"}}\n' ;;
+  deny)  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"touchbar rejected"}}\n' ;;
+  *) exit 0 ;;
 esac
 exit 0
