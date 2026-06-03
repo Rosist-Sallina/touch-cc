@@ -1,22 +1,39 @@
-// 临时入口（M2 Task 6）：验证 socket 链路，收到请求即自动 allow。
-// M3 Task 9 覆盖为正式守护进程（接 Touch Bar）。
-import Foundation
+import AppKit
 
-let q = RequestQueue()
-q.onPresent = { req in
-    FileHandle.standardError.write("收到请求: \(req.session) \(req.tool) \(req.summary)\n".data(using: .utf8)!)
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { q.resolveCurrent(.allow) }
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    let queue = RequestQueue()
+    let touchBar = TouchBarController()
+    var menu: MenuBarController?
+
+    func applicationDidFinishLaunching(_ n: Notification) {
+        let capable = TouchBarController.isCapable
+        menu = MenuBarController(capable: capable)
+
+        touchBar.onSwipe = { [weak self] decision in
+            self?.queue.resolveCurrent(decision)
+        }
+        queue.onPresent = { [weak self] req in
+            DispatchQueue.main.async { self?.touchBar.present(req) }
+        }
+        queue.onIdle = { [weak self] in
+            DispatchQueue.main.async { self?.touchBar.dismiss() }
+        }
+
+        let dir = "\(NSHomeDirectory())/.touchbar-cc"
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        let sock = "\(dir)/tbcd.sock"
+        do {
+            let server = SocketServer(path: sock, queue: queue)
+            try server.start()
+            NSLog("touchbar-cc 监听 \(sock) capable=\(capable)")
+        } catch {
+            NSLog("touchbar-cc socket 启动失败: \(error)")
+        }
+    }
 }
 
-let dir = "\(NSHomeDirectory())/.touchbar-cc"
-try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-let sock = "\(dir)/tbcd.sock"
-let server = SocketServer(path: sock, queue: q)
-do {
-    try server.start()
-    FileHandle.standardError.write("监听: \(sock)\n".data(using: .utf8)!)
-} catch {
-    FileHandle.standardError.write("socket 启动失败: \(error)\n".data(using: .utf8)!)
-    exit(1)
-}
-RunLoop.main.run()
+let app = NSApplication.shared
+app.setActivationPolicy(.accessory)
+let delegate = AppDelegate()
+app.delegate = delegate
+app.run()
