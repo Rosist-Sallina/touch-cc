@@ -2,58 +2,71 @@
 
 当 Claude Code 发起权限申请时，在 **Touch Bar** 上弹出精简审批条，**右滑通过 / 左滑拒绝**，处理完回到系统默认。一个纯增益的叠加层：不可用 / 超时 / 出错时自动退化为 CC 原生终端提示，绝不卡住你的工作流。
 
-> 仅适用于带 Touch Bar 的 Mac（如 MacBook Pro 13" M2 2022，Apple 最后一代 Touch Bar 机型）。
-
-## 工作原理
-
-```
-CC PreToolUse hook (hook.sh) ──unix socket──> tbcd 守护进程 ──私有API──> Touch Bar
-        ▲                                          │                      │
-        └──────── allow/deny ──────────────────────┘   <──左右滑手势──────┘
-```
-
-- **hook.sh**：CC 的 `PreToolUse` hook，把申请发给 tbcd 等决定；任何失败 `exit 0` → CC 回退原生提示。
-- **tbcd**：常驻菜单栏的 Swift 守护进程，用私有 `DFRFoundation` API 接管 Touch Bar，FIFO 队列支持多会话并发，每条带自动超时防卡死。
-- 详见 `docs/superpowers/specs/` 与 `docs/superpowers/plans/`。
-
-## 要求
-
-- 带 Touch Bar 的 Mac + macOS 13+
-- 已安装 Xcode（构建 Swift）。若 `swift build` 报 ManifestAPI 链接错误：
-  ```
-  sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-  ```
-- `jq`（Homebrew：`brew install jq`）
+> 仅适用于带 Touch Bar 的 Mac（MacBook Pro 2016–2022）。
 
 ## 安装
 
+一行命令（解压后双击 `install.command`）：
+
 ```bash
-./install.sh
+curl -fsSL https://github.com/你的用户名/touch-cc/releases/latest/download/touch-cc.tar.gz | tar xz && ./touch-cc/install.command
 ```
 
-会：构建 release → 组装 `/Applications/tbcd.app` → 安装 hook 到 `~/.claude/hooks/touchbar-cc/` → 幂等注入 `~/.claude/settings.json`（自动备份）→ 装 LaunchAgent 开机自启。
+或手动：下载 `touch-cc.tar.gz`，解压，双击 `install.command`。
 
-安装后菜单栏出现 **`⌇`**（能用）或 **`⚠️`**（Touch Bar 不可用，请求将回退终端）。在 CC 里跑一条 Bash 命令即可看到 Touch Bar 弹审批条。
+**零依赖**：不需要 Xcode、Homebrew、jq。包内是预编译好的 app。
+
+安装后菜单栏出现 **`⌇`** 图标，在 Claude Code 里执行任意命令即可体验 Touch Bar 审批。
 
 ## 卸载
 
+双击 `uninstall.command`，或：
+
 ```bash
-./uninstall.sh
+./touch-cc/uninstall.command
 ```
 
-移除 app / LaunchAgent / hook 脚本与 `~/.touchbar-cc/`。settings.json 的 hook 条目需手动删除，或恢复 `~/.claude/settings.json.tbcc-bak.*` 备份。
+自动移除 app、LaunchAgent、hook、配置，并清理 `~/.claude/settings.json`。
+
+## 使用
+
+- **右滑** → 通过（Allow）
+- **左滑** → 拒绝（Deny）
+- **点系统叉叉** → 等同拒绝
+- **不操作** → 超时后 CC 回退原生终端提示
+
+支持多个 CC 会话并发：请求排队，一次处理一条，来源项目名显示在 Touch Bar 上。
+
+## 配置
+
+`~/.touchbar-cc/config.json`（安装时自动生成）：
+
+```json
+{
+  "language": "en",
+  "threshold": 105,
+  "thumbWidth": 54,
+  "iconPath": "",
+  "uiTimeoutExtra": 5,
+  "colors": {
+    "background": "#000000",
+    "text": "#F0EEE6",
+    "coral": "#D97757",
+    "red": "#D95B50",
+    "green": "#79B068"
+  },
+  "fonts": { "session": 14, "tool": 16, "summary": 16, "hint": 14 }
+}
+```
+
+- `language`: `en` / `zh` / `ja`
+- `threshold`: 滑动触发距离（越大越要果断滑）
+- `iconPath`: 自定义图标（PNG 路径），空则用内置 Claude 星芒
+- `colors`: 全部 hex 可调
+- 改完重启 tbcd 生效：`launchctl unload ~/Library/LaunchAgents/com.touchbarcc.tbcd.plist && launchctl load ~/Library/LaunchAgents/com.touchbarcc.tbcd.plist`
 
 ## 故障排查
 
-- **菜单栏是 `⚠️`**：私有 Touch Bar API 在当前系统不可用，所有请求会回退终端 —— 不影响正常使用，只是没有 Touch Bar 审批。
-- **Touch Bar 没反应**：确认菜单栏有 `⌇`；查看日志 `log show --predicate 'process == "tbcd"' --last 5m`。
-- **首次运行被系统拦截**：到「系统设置 → 隐私与安全性」放行 ad-hoc 签名的 app。
-- **CC 没弹 Touch Bar**：确认 `~/.claude/settings.json` 的 `hooks.PreToolUse` 含 touchbar-cc 条目；hook 仅对 `Bash|Edit|Write|MultiEdit|NotebookEdit` 触发。
-
-## 开发
-
-```bash
-export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-swift test --package-path daemon      # 逻辑层单测
-bash hook/test_hook.sh                # hook 脚本测试
-```
+- **菜单栏 `⚠️`**：Touch Bar 私有 API 不可用，所有请求回退终端，不影响正常使用。
+- **Touch Bar 没反应**：确认菜单栏有 `⌇`；`log show --predicate 'process == "tbcd"' --last 5m`
+- **首次运行被系统拦截**：系统设置 → 隐私与安全性 → 放行。
