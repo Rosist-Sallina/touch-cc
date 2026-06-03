@@ -5,7 +5,7 @@
 set -uo pipefail
 
 SOCK="${TBCC_SOCK:-$HOME/.touchbar-cc/tbcd.sock}"
-TIMEOUT="${TBCC_TIMEOUT:-55}"
+TIMEOUT="${TBCC_TIMEOUT:-60}"
 
 INPUT="$(cat)"
 

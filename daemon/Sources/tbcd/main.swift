@@ -12,7 +12,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ n: Notification) {
         AppConfig.current = AppConfig.load()
         let capable = TouchBarController.isCapable
-        menu = MenuBarController(capable: capable)
 
         touchBar.onSwipe = { [weak self] decision in
             self?.queue.resolveCurrent(decision)
