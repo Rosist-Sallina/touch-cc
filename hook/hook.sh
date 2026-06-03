@@ -9,6 +9,16 @@ TIMEOUT="${TBCC_TIMEOUT:-55}"
 
 INPUT="$(cat)"
 
+# auto mode 下模型已自行判断危险性，直接放行不拦截
+perm_mode=$(printf '%s' "$INPUT" | /usr/bin/python3 -c "
+import sys,json
+try: print(json.load(sys.stdin).get('permission_mode',''))
+except: pass
+" 2>/dev/null) || true
+if [ "$perm_mode" = "auto" ]; then
+  exit 0
+fi
+
 # 轻量 JSON 提取（纯 bash，不依赖 jq）
 json_str() {
   printf '%s' "$INPUT" | /usr/bin/python3 -c "
