@@ -10,9 +10,11 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
     private var touchBar: NSTouchBar?
     private var approvalView: ApprovalView?
     private var pendingReq: ApprovalRequest?
+    private var timeoutWork: DispatchWorkItem?
     var onSwipe: ((Decision) -> Void)?
 
     /// 展示一条审批请求；首次调用接管 Touch Bar，后续仅刷新内容。
+    /// 同时为当前项设自动超时（hook 超时 + 5s 余量），防止 hook 断开后队列卡死。
     func present(_ req: ApprovalRequest) {
         pendingReq = req
         if touchBar == nil {
@@ -25,10 +27,17 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
         } else {
             approvalView?.update(req)
         }
+        // 重设当前项的自动超时计时器
+        timeoutWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.onSwipe?(.deny) }
+        timeoutWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Double(req.timeout + 5), execute: work)
     }
 
     /// 释放 Touch Bar，回到系统默认。
     func dismiss() {
+        timeoutWork?.cancel()
+        timeoutWork = nil
         if let tb = touchBar { Self.dismissSystemModal(tb) }
         touchBar = nil
         approvalView = nil

@@ -21,8 +21,8 @@ case "$tool" in
 esac
 
 id=$(/usr/bin/uuidgen)
-req=$(jq -nc --arg id "$id" --arg s "$session" --arg c "$cwd" --arg t "$tool" --arg sum "$summary" \
-  '{id:$id,session:$s,cwd:$c,tool:$t,summary:$sum,queue_remaining:0}')
+req=$(jq -nc --arg id "$id" --arg s "$session" --arg c "$cwd" --arg t "$tool" --arg sum "$summary" --argjson to "$TIMEOUT" \
+  '{id:$id,session:$s,cwd:$c,tool:$t,summary:$sum,queue_remaining:0,timeout:$to}')
 
 # 连 socket，发请求，读一行响应（超时回退）
 resp=$(printf '%s\n' "$req" | nc -U -w "$TIMEOUT" "$SOCK" 2>/dev/null | head -1) || exit 0
