@@ -1,8 +1,15 @@
 import AppKit
+import IOKit.pwr_mgt
 
 // 私有 DFRFoundation 符号（Spike 已验证在 macOS 26.5 可链接可用）。
 @_silgen_name("DFRSystemModalShowsCloseBoxWhenFrontMost")
 func DFRSystemModalShowsCloseBoxWhenFrontMost(_ show: Bool)
+
+/// 声明一次用户活动，尝试唤醒已变暗/休眠的 Touch Bar（重置系统 idle 计时）。
+private func wakeTouchBar() {
+    var aid: IOPMAssertionID = 0
+    IOPMAssertionDeclareUserActivity("touchbar-cc-approval" as CFString, kIOPMUserActiveLocal, &aid)
+}
 
 /// 接管 / 释放 Touch Bar，渲染审批界面，把手势结果回调出去。
 final class TouchBarController: NSObject, NSTouchBarDelegate {
@@ -17,6 +24,7 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
     /// 同时为当前项设自动超时（hook 超时 + 5s 余量），防止 hook 断开后队列卡死。
     func present(_ req: ApprovalRequest) {
         pendingReq = req
+        wakeTouchBar()
         if touchBar == nil {
             DFRSystemModalShowsCloseBoxWhenFrontMost(false)
             let tb = NSTouchBar()

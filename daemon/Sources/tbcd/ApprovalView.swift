@@ -1,12 +1,12 @@
 import AppKit
 
-// Claude 视觉语言配色
+// 黑底 + Claude 文字配色
 private enum Palette {
-    static let cream = NSColor(srgbRed: 0.941, green: 0.933, blue: 0.902, alpha: 1) // #F0EEE6 奶油底
-    static let ink   = NSColor(srgbRed: 0.239, green: 0.239, blue: 0.227, alpha: 1) // #3D3D3A 暖墨字
-    static let coral = NSColor(srgbRed: 0.851, green: 0.467, blue: 0.341, alpha: 1) // #D97757 赤陶橙
-    static let red   = NSColor(srgbRed: 0.749, green: 0.302, blue: 0.263, alpha: 1) // 拒绝
-    static let green = NSColor(srgbRed: 0.416, green: 0.604, blue: 0.357, alpha: 1) // 通过
+    static let bg    = NSColor.black                                                 // Touch Bar 原生黑
+    static let text  = NSColor(srgbRed: 0.941, green: 0.933, blue: 0.902, alpha: 1)  // 奶油白正文
+    static let coral = NSColor(srgbRed: 0.851, green: 0.467, blue: 0.341, alpha: 1)  // #D97757 赤陶橙
+    static let red   = NSColor(srgbRed: 0.851, green: 0.357, blue: 0.314, alpha: 1)  // 拒绝
+    static let green = NSColor(srgbRed: 0.475, green: 0.690, blue: 0.408, alpha: 1)  // 通过
 }
 
 private func emoji(for tool: String) -> String {
@@ -28,7 +28,7 @@ private func blend(_ from: NSColor, _ to: NSColor, _ ratio: CGFloat) -> NSColor 
                    alpha: 1)
 }
 
-/// Touch Bar 审批视图：Claude 风格 + 跟手滑块手势。
+/// Touch Bar 审批视图：黑底 + Claude 文字配色 + 跟手滑块手势。
 final class ApprovalView: NSView {
     var onDecision: ((Decision) -> Void)?
 
@@ -47,8 +47,7 @@ final class ApprovalView: NSView {
         super.init(frame: frame)
         wantsLayer = true
         allowedTouchTypes = [.direct]
-        layer?.backgroundColor = Palette.cream.cgColor
-        layer?.cornerRadius = 8
+        layer?.backgroundColor = Palette.bg.cgColor
 
         for f in [summaryField, leftHint, rightHint] {
             f.translatesAutoresizingMaskIntoConstraints = false
@@ -58,9 +57,9 @@ final class ApprovalView: NSView {
             addSubview(f)
         }
         leftHint.font = .systemFont(ofSize: 12, weight: .medium)
-        leftHint.textColor = Palette.red.withAlphaComponent(0.55)
+        leftHint.textColor = Palette.red.withAlphaComponent(0.7)
         rightHint.font = .systemFont(ofSize: 12, weight: .medium)
-        rightHint.textColor = Palette.green.withAlphaComponent(0.55)
+        rightHint.textColor = Palette.green.withAlphaComponent(0.7)
 
         NSLayoutConstraint.activate([
             widthAnchor.constraint(equalToConstant: 620),
@@ -81,8 +80,8 @@ final class ApprovalView: NSView {
         thumb.zPosition = 100
         thumb.opacity = 0
         thumb.shadowColor = NSColor.black.cgColor
-        thumb.shadowOpacity = 0.22
-        thumb.shadowRadius = 3
+        thumb.shadowOpacity = 0.35
+        thumb.shadowRadius = 4
         thumb.shadowOffset = CGSize(width: 0, height: -1)
         thumbArrow.contentsScale = scale
         thumbArrow.alignmentMode = .center
@@ -99,7 +98,7 @@ final class ApprovalView: NSView {
         if sum.count > 42 { sum = String(sum.prefix(42)) + "…" }
         let s = NSMutableAttributedString()
         s.append(NSAttributedString(string: "\(req.session)   ",
-            attributes: [.foregroundColor: Palette.ink.withAlphaComponent(0.5),
+            attributes: [.foregroundColor: Palette.text.withAlphaComponent(0.5),
                          .font: NSFont.systemFont(ofSize: 12)]))
         s.append(NSAttributedString(string: "\(emoji(for: req.tool)) ",
             attributes: [.font: NSFont.systemFont(ofSize: 14)]))
@@ -107,7 +106,7 @@ final class ApprovalView: NSView {
             attributes: [.foregroundColor: Palette.coral,
                          .font: NSFont.boldSystemFont(ofSize: 13)]))
         s.append(NSAttributedString(string: sum,
-            attributes: [.foregroundColor: Palette.ink,
+            attributes: [.foregroundColor: Palette.text,
                          .font: NSFont.systemFont(ofSize: 13)]))
         summaryField.attributedStringValue = s
         summaryField.alphaValue = 1
@@ -162,15 +161,15 @@ final class ApprovalView: NSView {
         if dx > 6 {
             thumbArrow.string = "→"
             thumb.backgroundColor = Palette.green.cgColor
-            layer?.backgroundColor = blend(Palette.cream, Palette.green, mag * 0.4).cgColor
+            layer?.backgroundColor = blend(Palette.bg, Palette.green, mag * 0.55).cgColor
         } else if dx < -6 {
             thumbArrow.string = "←"
             thumb.backgroundColor = Palette.red.cgColor
-            layer?.backgroundColor = blend(Palette.cream, Palette.red, mag * 0.4).cgColor
+            layer?.backgroundColor = blend(Palette.bg, Palette.red, mag * 0.55).cgColor
         } else {
             thumbArrow.string = "⟷"
             thumb.backgroundColor = Palette.coral.cgColor
-            layer?.backgroundColor = Palette.cream.cgColor
+            layer?.backgroundColor = Palette.bg.cgColor
         }
         let scale: CGFloat = abs(dx) >= threshold ? 1.18 : 1.0
         thumb.transform = CATransform3DMakeScale(scale, scale, 1)
@@ -180,7 +179,7 @@ final class ApprovalView: NSView {
     private func reset() {
         thumb.opacity = 0
         thumb.transform = CATransform3DIdentity
-        layer?.backgroundColor = Palette.cream.cgColor
+        layer?.backgroundColor = Palette.bg.cgColor
         summaryField.alphaValue = 1
     }
 
