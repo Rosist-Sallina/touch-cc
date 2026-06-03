@@ -45,9 +45,9 @@ id=$(/usr/bin/uuidgen)
 esc() { printf '%s' "$1" | /usr/bin/python3 -c "import sys,json;print(json.dumps(sys.stdin.read()),end='')"; }
 req="{\"id\":$(esc "$id"),\"session\":$(esc "$session"),\"cwd\":$(esc "$cwd"),\"tool\":$(esc "$tool"),\"summary\":$(esc "$summary"),\"queue_remaining\":0,\"timeout\":$TIMEOUT}"
 
-# 连 socket，发请求，读一行响应（超时回退）
-resp=$(printf '%s\n' "$req" | nc -U -w "$TIMEOUT" "$SOCK" 2>/dev/null | head -1) || exit 0
-[ -z "$resp" ] && exit 0
+# 连 socket，发请求，读一行响应（超时回退终端确认）
+resp=$(printf '%s\n' "$req" | nc -U -w "$TIMEOUT" "$SOCK" 2>/dev/null | head -1) || { printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"touchbar timeout"}}\n'; exit 0; }
+[ -z "$resp" ] && { printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"touchbar timeout"}}\n'; exit 0; }
 
 # 提取 decision 字段
 decision=$(printf '%s' "$resp" | /usr/bin/python3 -c "
