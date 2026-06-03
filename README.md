@@ -9,7 +9,7 @@
 一行命令（解压后双击 `install.command`）：
 
 ```bash
-curl -fsSL https://github.com/你的用户名/touch-cc/releases/latest/download/touch-cc.tar.gz | tar xz && ./touch-cc/install.command
+curl -fsSL https://github.com/Rosist-Sallina/touch-cc/releases/latest/download/touch-cc.tar.gz | tar xz && ./touch-cc/install.command
 ```
 
 或手动：下载 `touch-cc.tar.gz`，解压，双击 `install.command`。
