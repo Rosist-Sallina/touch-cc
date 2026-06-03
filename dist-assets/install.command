@@ -61,7 +61,13 @@ launchctl unload "$LA" 2>/dev/null || true
 launchctl load "$LA"
 echo "    OK"
 
-# 5. 生成默认配置
+# 5. 复制卸载脚本到固定位置（用户删了解压目录后仍能找到）
+echo "==> 安装卸载脚本"
+cp "$DIR/uninstall.command" "$CONF_DIR/uninstall.command"
+chmod +x "$CONF_DIR/uninstall.command"
+echo "    OK (位于 ~/.touchbar-cc/uninstall.command)"
+
+# 6. 生成默认配置
 echo "==> 生成默认配置"
 mkdir -p "$CONF_DIR"
 if [ ! -f "$CONF_DIR/config.json" ]; then
@@ -95,5 +101,5 @@ echo "  菜单栏应出现 ⌇ 图标。"
 echo "  在 Claude Code 里执行任意命令即可体验。"
 echo ""
 echo "  配置: ~/.touchbar-cc/config.json"
-echo "  卸载: 运行 uninstall.command"
+echo "  卸载: ~/.touchbar-cc/uninstall.command"
 echo "══════════════════════════════════════════"
