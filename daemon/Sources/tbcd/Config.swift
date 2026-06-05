@@ -25,15 +25,19 @@ struct AppConfig {
     struct Colors { var background, text, coral, red, green: NSColor }
     struct Fonts { var session, tool, summary, hint: CGFloat }
 
-    var language: String          // zh / en / ja
-    var threshold: CGFloat        // 滑动触发距离
-    var thumbWidth: CGFloat       // 滑块宽度
-    var iconPath: String          // 自定义图标(PNG等)绝对路径；空则用内置 Claude 星芒
+    var language: String
+    var threshold: CGFloat
+    var thumbWidth: CGFloat
+    var iconPath: String
     var colors: Colors
+    var codexColors: Colors
     var fonts: Fonts
-    var uiTimeoutExtra: CGFloat   // tbcd 当前项自动超时 = hook 超时 + 该余量
+    var uiTimeoutExtra: CGFloat
 
-    /// 当前生效配置（main 启动时 load 后赋值）。
+    func colors(for client: ClientKind) -> Colors {
+        client == .codex ? codexColors : colors
+    }
+
     static var current: AppConfig = .default
 
     static let `default` = AppConfig(
@@ -41,10 +45,12 @@ struct AppConfig {
         colors: Colors(background: .black,
                        text: hexColor("#F0EEE6")!, coral: hexColor("#D97757")!,
                        red: hexColor("#D95B50")!, green: hexColor("#79B068")!),
+        codexColors: Colors(background: .black,
+                            text: hexColor("#ECECF1")!, coral: hexColor("#10A37F")!,
+                            red: hexColor("#EF4444")!, green: hexColor("#10A37F")!),
         fonts: Fonts(session: 14, tool: 16, summary: 16, hint: 14),
         uiTimeoutExtra: 5)
 
-    // 全 optional → 缺键解析为 nil 不抛错，逐项 merge 到默认值。
     private struct File: Codable {
         var language: String?
         var threshold: Double?
@@ -52,6 +58,7 @@ struct AppConfig {
         var iconPath: String?
         var uiTimeoutExtra: Double?
         var colors: C?
+        var codexColors: C?
         var fonts: F?
         struct C: Codable { var background, text, coral, red, green: String? }
         struct F: Codable { var session, tool, summary, hint: Double? }
@@ -83,6 +90,13 @@ struct AppConfig {
             if let s = cc.red, let col = hexColor(s) { c.colors.red = col }
             if let s = cc.green, let col = hexColor(s) { c.colors.green = col }
         }
+        if let cc = f.codexColors {
+            if let s = cc.background, let col = hexColor(s) { c.codexColors.background = col }
+            if let s = cc.text, let col = hexColor(s) { c.codexColors.text = col }
+            if let s = cc.coral, let col = hexColor(s) { c.codexColors.coral = col }
+            if let s = cc.red, let col = hexColor(s) { c.codexColors.red = col }
+            if let s = cc.green, let col = hexColor(s) { c.codexColors.green = col }
+        }
         if let ff = f.fonts {
             if let v = ff.session { c.fonts.session = CGFloat(v) }
             if let v = ff.tool { c.fonts.tool = CGFloat(v) }
@@ -105,6 +119,13 @@ struct AppConfig {
         "coral": "#D97757",
         "red": "#D95B50",
         "green": "#79B068"
+      },
+      "codexColors": {
+        "background": "#000000",
+        "text": "#ECECF1",
+        "coral": "#10A37F",
+        "red": "#EF4444",
+        "green": "#10A37F"
       },
       "fonts": { "session": 14, "tool": 16, "summary": 16, "hint": 14 }
     }

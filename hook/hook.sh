@@ -10,14 +10,15 @@ TIMEOUT="${TBCC_TIMEOUT:-60}"
 INPUT="$(cat)"
 
 # auto mode 下模型已自行判断危险性，直接放行不拦截
+# CC: "auto"  Codex: "dontAsk" / "bypassPermissions"
 perm_mode=$(printf '%s' "$INPUT" | /usr/bin/python3 -c "
 import sys,json
 try: print(json.load(sys.stdin).get('permission_mode',''))
 except: pass
 " 2>/dev/null) || true
-if [ "$perm_mode" = "auto" ]; then
-  exit 0
-fi
+case "$perm_mode" in
+  auto|dontAsk|bypassPermissions) exit 0 ;;
+esac
 
 # 轻量 JSON 提取（纯 bash，不依赖 jq）
 json_str() {
@@ -28,6 +29,9 @@ try:
 except: sys.exit(1)
 " 2>/dev/null
 }
+
+# 自动检测调用方：Codex 输入有 turn_id 字段，CC 没有
+client=$(json_str "print('codex' if 'turn_id' in d else 'cc')") || client="cc"
 
 session=$(json_str "print(d.get('cwd','').rsplit('/',1)[-1])") || exit 0
 cwd=$(json_str "print(d.get('cwd',''))") || exit 0
@@ -43,7 +47,7 @@ id=$(/usr/bin/uuidgen)
 
 # 手工构造 JSON（避免依赖 jq）
 esc() { printf '%s' "$1" | /usr/bin/python3 -c "import sys,json;print(json.dumps(sys.stdin.read()),end='')"; }
-req="{\"id\":$(esc "$id"),\"session\":$(esc "$session"),\"cwd\":$(esc "$cwd"),\"tool\":$(esc "$tool"),\"summary\":$(esc "$summary"),\"queue_remaining\":0,\"timeout\":$TIMEOUT}"
+req="{\"id\":$(esc "$id"),\"session\":$(esc "$session"),\"cwd\":$(esc "$cwd"),\"tool\":$(esc "$tool"),\"summary\":$(esc "$summary"),\"client\":$(esc "$client"),\"queue_remaining\":0,\"timeout\":$TIMEOUT}"
 
 # 连 socket，发请求，读一行响应（超时回退终端确认）
 resp=$(printf '%s\n' "$req" | nc -U -w "$TIMEOUT" "$SOCK" 2>/dev/null | head -1) || { printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"touchbar timeout"}}\n'; exit 0; }

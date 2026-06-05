@@ -43,6 +43,58 @@ private final class ClaudeMark: CALayer {
     func startPulse() { tbcd.startPulse(self) }
 }
 
+private final class OpenAIMark: CALayer {
+    func build(size: CGFloat, color: CGColor) {
+        sublayers?.forEach { $0.removeFromSuperlayer() }
+        bounds = CGRect(x: 0, y: 0, width: size, height: size)
+
+        let shape = CAShapeLayer()
+        shape.frame = bounds
+        let path = CGMutablePath()
+        let cx = size / 2, cy = size / 2
+        let r = size * 0.42
+        let n = 6
+        for i in 0..<n {
+            let angle = CGFloat(i) / CGFloat(n) * .pi * 2 - .pi / 2
+            let px = cx + r * cos(angle)
+            let py = cy + r * sin(angle)
+            let nextAngle = CGFloat(i + 1) / CGFloat(n) * .pi * 2 - .pi / 2
+            let nx = cx + r * cos(nextAngle)
+            let ny = cy + r * sin(nextAngle)
+            path.move(to: CGPoint(x: cx, y: cy))
+            path.addLine(to: CGPoint(x: px, y: py))
+            path.addLine(to: CGPoint(x: nx, y: ny))
+            path.closeSubpath()
+        }
+        shape.path = path
+        shape.fillColor = nil
+        shape.strokeColor = color
+        shape.lineWidth = size * 0.08
+        shape.lineJoin = .round
+        addSublayer(shape)
+
+        let inner = CAShapeLayer()
+        inner.frame = bounds
+        let ip = CGMutablePath()
+        let ir = size * 0.22
+        for i in 0..<n {
+            let angle = CGFloat(i) / CGFloat(n) * .pi * 2 - .pi / 2
+            let px = cx + ir * cos(angle)
+            let py = cy + ir * sin(angle)
+            if i == 0 { ip.move(to: CGPoint(x: px, y: py)) }
+            else { ip.addLine(to: CGPoint(x: px, y: py)) }
+        }
+        ip.closeSubpath()
+        inner.path = ip
+        inner.fillColor = nil
+        inner.strokeColor = color
+        inner.lineWidth = size * 0.08
+        inner.lineJoin = .round
+        addSublayer(inner)
+    }
+    func startPulse() { tbcd.startPulse(self) }
+}
+
 final class ApprovalView: NSView {
     var onDecision: ((Decision) -> Void)?
     var onWindowLost: (() -> Void)?
@@ -51,10 +103,16 @@ final class ApprovalView: NSView {
     private let cfg = AppConfig.current
     private let leftHint = NSTextField(labelWithString: "")
     private let rightHint = NSTextField(labelWithString: "")
-    private let mark = ClaudeMark()
+    private let claudeMark = ClaudeMark()
+    private let openaiMark = OpenAIMark()
     private let iconLayer = CALayer()
     private var usingCustomIcon = false
-    private var activeIcon: CALayer { usingCustomIcon ? iconLayer : mark }
+    private var currentClient: ClientKind = .cc
+    private var activeIcon: CALayer {
+        if usingCustomIcon { return iconLayer }
+        return currentClient == .codex ? openaiMark : claudeMark
+    }
+    private var activeColors: AppConfig.Colors { cfg.colors(for: currentClient) }
     private let thumb = CALayer()
     private let thumbArrow = CATextLayer()
     private let markSize: CGFloat = 22
@@ -112,7 +170,7 @@ final class ApprovalView: NSView {
             scrollLayer.addSublayer(t)
         }
 
-        // 图标
+        // 图标：三种都预建，update 时按 client 切换可见性
         if let img = loadIcon(cfg.iconPath, size: markSize) {
             usingCustomIcon = true
             iconLayer.contents = img
@@ -121,9 +179,14 @@ final class ApprovalView: NSView {
             startPulse(iconLayer)
             layer?.addSublayer(iconLayer)
         } else {
-            mark.build(size: markSize, color: cfg.colors.coral.cgColor)
-            mark.startPulse()
-            layer?.addSublayer(mark)
+            claudeMark.build(size: markSize, color: cfg.colors.coral.cgColor)
+            claudeMark.startPulse()
+            layer?.addSublayer(claudeMark)
+
+            openaiMark.build(size: markSize, color: cfg.codexColors.coral.cgColor)
+            openaiMark.startPulse()
+            openaiMark.opacity = 0
+            layer?.addSublayer(openaiMark)
         }
 
         // 滑块
@@ -165,16 +228,31 @@ final class ApprovalView: NSView {
     }
 
     func update(_ req: ApprovalRequest) {
+        currentClient = req.client
+        let colors = activeColors
+
+        // 切换 logo 可见性
+        if !usingCustomIcon {
+            claudeMark.opacity = currentClient == .cc ? 1 : 0
+            openaiMark.opacity = currentClient == .codex ? 1 : 0
+        }
+
+        // 切换 hint 颜色
+        leftHint.textColor = colors.red.withAlphaComponent(0.85)
+        rightHint.textColor = colors.green.withAlphaComponent(0.85)
+        layer?.backgroundColor = colors.background.cgColor
+        thumb.backgroundColor = colors.coral.cgColor
+
         let sum = req.summary.replacingOccurrences(of: "\n", with: " ")
         let s = NSMutableAttributedString()
         s.append(NSAttributedString(string: "\(req.session)   ",
-            attributes: [.foregroundColor: cfg.colors.text.withAlphaComponent(0.5),
+            attributes: [.foregroundColor: colors.text.withAlphaComponent(0.5),
                          .font: NSFont.systemFont(ofSize: cfg.fonts.session)]))
         s.append(NSAttributedString(string: "\(req.tool)  ",
-            attributes: [.foregroundColor: cfg.colors.coral,
+            attributes: [.foregroundColor: colors.coral,
                          .font: NSFont.boldSystemFont(ofSize: cfg.fonts.tool)]))
         s.append(NSAttributedString(string: sum,
-            attributes: [.foregroundColor: cfg.colors.text,
+            attributes: [.foregroundColor: colors.text,
                          .font: NSFont.systemFont(ofSize: cfg.fonts.summary)]))
         text1.string = s
         text2.string = s
@@ -240,6 +318,7 @@ final class ApprovalView: NSView {
     override func touchesCancelled(with event: NSEvent) { tracking = false; reset() }
 
     private func place(at x: CGFloat, dx: CGFloat) {
+        let colors = activeColors
         let h = bounds.height
         let cx = min(max(x, thumbW / 2), bounds.width - thumbW / 2)
         let th: CGFloat = 28
@@ -247,26 +326,27 @@ final class ApprovalView: NSView {
         thumbArrow.frame = CGRect(x: 0, y: (th - 24) / 2, width: thumbW, height: 24)
         let mag = min(abs(dx) / threshold, 1)
         if dx > 6 {
-            thumbArrow.string = "→"; thumb.backgroundColor = cfg.colors.green.cgColor
-            layer?.backgroundColor = blend(cfg.colors.background, cfg.colors.green, mag * 0.9).cgColor
+            thumbArrow.string = "→"; thumb.backgroundColor = colors.green.cgColor
+            layer?.backgroundColor = blend(colors.background, colors.green, mag * 0.9).cgColor
         } else if dx < -6 {
-            thumbArrow.string = "←"; thumb.backgroundColor = cfg.colors.red.cgColor
-            layer?.backgroundColor = blend(cfg.colors.background, cfg.colors.red, mag * 0.9).cgColor
+            thumbArrow.string = "←"; thumb.backgroundColor = colors.red.cgColor
+            layer?.backgroundColor = blend(colors.background, colors.red, mag * 0.9).cgColor
         } else {
-            thumbArrow.string = "↔"; thumb.backgroundColor = cfg.colors.coral.cgColor
-            layer?.backgroundColor = cfg.colors.background.cgColor
+            thumbArrow.string = "↔"; thumb.backgroundColor = colors.coral.cgColor
+            layer?.backgroundColor = colors.background.cgColor
         }
         thumb.transform = CATransform3DMakeScale(abs(dx) >= threshold ? 1.18 : 1.0,
                                                   abs(dx) >= threshold ? 1.18 : 1.0, 1)
     }
     private func reset() {
         thumb.opacity = 0; thumb.transform = CATransform3DIdentity
-        layer?.backgroundColor = cfg.colors.background.cgColor
+        layer?.backgroundColor = activeColors.background.cgColor
         text1.opacity = 1; text2.opacity = 1; activeIcon.opacity = 1
     }
     private func confirm(_ d: Decision) {
+        let colors = activeColors
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        let c = (d == .allow ? cfg.colors.green : cfg.colors.red)
+        let c = (d == .allow ? colors.green : colors.red)
         layer?.backgroundColor = c.withAlphaComponent(0.9).cgColor
         thumb.backgroundColor = c.cgColor
         CATransaction.commit()

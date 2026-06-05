@@ -1,5 +1,7 @@
 import Foundation
 
+enum ClientKind: String, Codable { case cc, codex }
+
 struct ApprovalRequest: Codable {
     let id: String
     let session: String
@@ -7,12 +9,11 @@ struct ApprovalRequest: Codable {
     let tool: String
     let summary: String
     let queueRemaining: Int
-    /// hook 端 socket 超时（秒）。tbcd 据此对当前展示项设自动超时，避免 hook 断开后队列卡死。
-    /// 带默认值：缺失该键时（旧请求/裸 nc 测试）合成 Decodable 回退到 55。
+    var client: ClientKind = .cc
     var timeout: Int = 55
 
     enum CodingKeys: String, CodingKey {
-        case id, session, cwd, tool, summary, timeout
+        case id, session, cwd, tool, summary, timeout, client
         case queueRemaining = "queue_remaining"
     }
 
@@ -22,7 +23,6 @@ struct ApprovalRequest: Codable {
 }
 
 extension ApprovalRequest {
-    // 自定义 decode：timeout 缺失时回退 55。放在 extension 以保留 memberwise init。
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
@@ -31,6 +31,7 @@ extension ApprovalRequest {
         tool = try c.decode(String.self, forKey: .tool)
         summary = try c.decode(String.self, forKey: .summary)
         queueRemaining = try c.decode(Int.self, forKey: .queueRemaining)
+        client = try c.decodeIfPresent(ClientKind.self, forKey: .client) ?? .cc
         timeout = try c.decodeIfPresent(Int.self, forKey: .timeout) ?? 55
     }
 }

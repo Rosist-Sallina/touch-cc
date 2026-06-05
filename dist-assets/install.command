@@ -6,13 +6,15 @@ set -euo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 APP="/Applications/tbcd.app"
 HOOK_DIR="$HOME/.claude/hooks/touchbar-cc"
+CODEX_HOOK_DIR="$HOME/.codex/hooks/touchbar-cc"
 SETTINGS="$HOME/.claude/settings.json"
+CODEX_CONFIG="$HOME/.codex/config.toml"
 LA="$HOME/Library/LaunchAgents/com.touchbarcc.tbcd.plist"
 CONF_DIR="$HOME/.touchbar-cc"
 
 echo "╔══════════════════════════════════════════╗"
 echo "║   touch-cc installer                     ║"
-echo "║   Touch Bar × Claude Code 权限审批       ║"
+echo "║   Touch Bar × Claude Code / Codex CLI    ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 
@@ -23,11 +25,14 @@ cp -R "$DIR/tbcd.app" "$APP"
 xattr -cr "$APP" 2>/dev/null || true
 echo "    OK"
 
-# 2. 安装 hook
+# 2. 安装 hook 脚本（CC + Codex 共用同一脚本）
 echo "==> 安装 hook 脚本"
 mkdir -p "$HOOK_DIR"
 cp "$DIR/hook.sh" "$HOOK_DIR/hook.sh"
 chmod +x "$HOOK_DIR/hook.sh"
+mkdir -p "$CODEX_HOOK_DIR"
+cp "$DIR/hook.sh" "$CODEX_HOOK_DIR/hook.sh"
+chmod +x "$CODEX_HOOK_DIR/hook.sh"
 echo "    OK"
 
 # 3. 注入 settings.json（用 python3 代替 jq，macOS 自带）
@@ -45,13 +50,49 @@ s.setdefault("hooks", {}).setdefault("PreToolUse", [])
 exists = any(cmd in str(e) for e in s["hooks"]["PreToolUse"])
 if not exists:
     s["hooks"]["PreToolUse"].append({
-        "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit",
+        "matcher": ".*",
         "hooks": [{"type": "command", "command": cmd, "timeout": 70}]
     })
 with open(settings_path, "w") as f:
     json.dump(s, f, indent=2)
 PYEOF
 echo "    OK"
+
+# 3b. 配置 Codex CLI hook（若 ~/.codex 存在）
+if [ -d "$HOME/.codex" ]; then
+echo "==> 配置 Codex CLI hook (幂等)"
+[ -f "$CODEX_CONFIG" ] || touch "$CODEX_CONFIG"
+cp "$CODEX_CONFIG" "$CODEX_CONFIG.tbcc-bak" 2>/dev/null || true
+/usr/bin/python3 - "$CODEX_CONFIG" "$CODEX_HOOK_DIR/hook.sh" <<'PYEOF'
+import sys, os
+
+config_path, hook_path = sys.argv[1], sys.argv[2]
+cmd = f"bash {hook_path}"
+
+with open(config_path) as f:
+    content = f.read()
+
+marker = "# touchbar-cc hook"
+if marker in content:
+    print("    已存在，跳过")
+else:
+    block = f"""
+{marker}
+[[PreToolUse]]
+matcher = ".*"
+[[PreToolUse.hooks]]
+type = "command"
+command = "{cmd}"
+timeout = 70
+"""
+    with open(config_path, "a") as f:
+        f.write(block)
+    print("    已注入")
+PYEOF
+echo "    OK"
+else
+echo "==> Codex CLI 未安装，跳过配置"
+fi
 
 # 4. 安装 LaunchAgent
 echo "==> 安装 LaunchAgent (开机自启)"
@@ -85,6 +126,13 @@ cat > "$CONF_DIR/config.json" <<'CONFEOF'
     "red": "#D95B50",
     "green": "#79B068"
   },
+  "codexColors": {
+    "background": "#000000",
+    "text": "#ECECF1",
+    "coral": "#10A37F",
+    "red": "#EF4444",
+    "green": "#10A37F"
+  },
   "fonts": { "session": 14, "tool": 16, "summary": 16, "hint": 14 }
 }
 CONFEOF
@@ -97,8 +145,8 @@ echo ""
 echo "══════════════════════════════════════════"
 echo "  ✓ 安装完成！"
 echo ""
-echo "  菜单栏应出现 ⌇ 图标。"
-echo "  在 Claude Code 里执行任意命令即可体验。"
+echo "  支持 Claude Code + Codex CLI。"
+echo "  在 CC / Codex 里执行任意命令即可体验。"
 echo ""
 echo "  配置: ~/.touchbar-cc/config.json"
 echo "  卸载: ~/.touchbar-cc/uninstall.command"
